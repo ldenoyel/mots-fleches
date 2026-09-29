@@ -1,0 +1,689 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>Mots fléchés</title>
+<style>
+:root {
+  --ink: #21294a;
+  --line: #6b7594;
+  --clue: #deedfc;
+  --blank: #8fb5e3;
+  --arrow: #e65438;
+  --mystery: #804db8;
+  --word: #fff0b3;
+  --cursor: #ffc94a;
+  --clue-active: #ffd8cc;
+  --page: #f4f6fb;
+  --card: #ffffff;
+  --muted: #5b6380;
+  --ok: #1f8a5b;
+  --cell: 40px;
+  --kb-height: 0px;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+main {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 16px 16px calc(24px + var(--kb-height));
+}
+button { font: inherit; color: inherit; }
+
+/* title tiles, like the PDF */
+#title {
+  display: flex; flex-wrap: wrap; justify-content: center;
+  gap: 4px; margin: 4px 0 14px;
+}
+#title .tile {
+  width: var(--tile, 34px); height: var(--tile, 34px);
+  display: grid; place-items: center;
+  border-radius: 18%;
+  color: #fff; font-weight: 800; font-size: calc(var(--tile, 34px) * 0.6);
+  transform: rotate(var(--tilt));
+}
+#title .gap { width: calc(var(--tile, 34px) * 0.45); }
+#title.win .tile { animation: hop 0.6s ease-in-out calc(var(--i) * 60ms) 3; }
+@keyframes hop {
+  0%, 100% { transform: rotate(var(--tilt)) translateY(0); }
+  50% { transform: rotate(calc(var(--tilt) * -2)) translateY(-10px); }
+}
+
+/* mystery word */
+#mystery { text-align: center; margin: 0 0 14px; }
+#mystery .label { color: var(--mystery); font-weight: 700; margin-right: 8px; }
+#mystery .boxes {
+  display: inline-flex; flex-wrap: wrap; justify-content: center;
+  gap: 4px; vertical-align: middle;
+}
+#mystery .box {
+  position: relative; width: 30px; height: 30px;
+  border: 2px solid var(--mystery); border-radius: 5px; background: var(--card);
+  display: grid; place-items: center; font-weight: 700; font-size: 17px;
+  cursor: pointer; padding: 0;
+}
+#mystery .box small {
+  position: absolute; right: 2px; bottom: 0; font-size: 9px;
+  color: var(--mystery); font-weight: 700;
+}
+#mystery .dash { align-self: center; color: var(--mystery); font-weight: 700; }
+#mystery .mystery-def { color: var(--mystery); font-style: italic; margin: 6px 0 0; font-size: 15px; }
+
+/* current definition */
+#cluebar {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; align-items: center; gap: 10px;
+  min-height: 56px; margin: 0 -16px 12px; padding: 8px 16px;
+  background: var(--card); border-bottom: 1px solid #dde2ee;
+  box-shadow: 0 2px 8px rgba(33, 41, 74, 0.06);
+}
+#clue-arrow {
+  flex: none; width: 34px; height: 34px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--arrow); color: #fff; font-size: 20px; font-weight: 700;
+}
+#clue-text { font-size: 17px; line-height: 1.3; }
+#clue-text .len { color: var(--muted); font-size: 14px; white-space: nowrap; }
+#clue-text .hint { color: var(--muted); }
+
+/* grid */
+#board {
+  position: relative; margin: 0 auto;
+  width: calc(var(--cols) * var(--cell));
+  height: calc(var(--rows) * var(--cell));
+}
+#grid {
+  display: grid;
+  grid-template-columns: repeat(var(--cols), var(--cell));
+  grid-auto-rows: var(--cell);
+  background: var(--card);
+  -webkit-user-select: none; user-select: none;
+}
+#overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.cell { position: relative; touch-action: manipulation; }
+.cell.letter {
+  display: grid; place-items: center; cursor: pointer;
+  font-weight: 700; font-size: calc(var(--cell) * 0.56); line-height: 1;
+}
+.cell.letter.word { background: var(--word); }
+.cell.letter.cursor { background: var(--cursor); }
+.cell.clue { background: var(--clue); display: flex; flex-direction: column; cursor: pointer; }
+.cell.blank { background: var(--blank); display: grid; place-items: center; color: #fff; font-size: calc(var(--cell) * 0.32); }
+.def {
+  flex: 1 1 0; min-height: 0; overflow: hidden;
+  display: flex; align-items: center;
+  padding: 0 calc(var(--cell) * 0.05);
+}
+.def + .def { border-top: 1px solid var(--line); }
+.def.active { background: var(--clue-active); }
+.def span {
+  display: block; width: 100%;
+  text-align: center; line-height: 1.08;
+  hyphens: manual; overflow-wrap: normal; word-break: normal;
+}
+.def.split span { hyphens: auto; overflow-wrap: anywhere; }
+.num {
+  position: absolute; right: 1px; bottom: 1px;
+  width: calc(var(--cell) * 0.3); height: calc(var(--cell) * 0.3);
+  border-radius: 50%; background: var(--mystery); color: #fff;
+  display: grid; place-items: center;
+  font-size: calc(var(--cell) * 0.19); font-weight: 700;
+}
+
+/* actions */
+#actions { text-align: center; margin: 20px 0 8px; }
+#check {
+  border: 0; border-radius: 999px; padding: 13px 26px;
+  background: var(--arrow); color: #fff; font-weight: 700; font-size: 17px;
+  cursor: pointer; box-shadow: 0 3px 10px rgba(230, 84, 56, 0.3);
+}
+#check:disabled { background: #c3c8d6; box-shadow: none; cursor: default; }
+#status { min-height: 1.4em; margin: 12px 0 4px; font-size: 16px; color: var(--muted); }
+#status.bad { color: var(--arrow); font-weight: 700; }
+#status.good { color: var(--ok); font-weight: 700; }
+#reset {
+  background: none; border: 0; color: var(--muted); text-decoration: underline;
+  font-size: 14px; cursor: pointer; padding: 6px;
+}
+.help { color: var(--muted); font-size: 13px; text-align: center; margin: 8px 0 0; }
+
+/* on-screen keyboard (touch screens) */
+#keyboard {
+  display: none; position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+  padding: 6px 3px calc(6px + env(safe-area-inset-bottom));
+  background: #dfe4ee; border-top: 1px solid #c9d0de;
+}
+body.touch #keyboard { display: block; }
+#keyboard .row { display: flex; justify-content: center; max-width: 520px; margin: 0 auto; }
+#keyboard button {
+  flex: 1 1 0; min-width: 0; height: 46px; margin: 3px 2px;
+  border: 0; border-radius: 6px; background: #fff;
+  box-shadow: 0 1px 0 #aab2c4; font-size: 20px; font-weight: 600;
+  touch-action: manipulation; -webkit-user-select: none; user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+#keyboard button.wide { flex-grow: 1.6; background: #c9d0de; font-size: 18px; }
+#keyboard button.pressed { background: var(--cursor); }
+</style>
+</head>
+<body>
+<main>
+  <header id="title" role="heading" aria-level="1" aria-label="Mots fléchés"></header>
+  <section id="mystery" hidden>
+    <span class="label">Mot mystère</span><span class="boxes"></span>
+    <p class="mystery-def" hidden></p>
+  </section>
+  <div id="cluebar" aria-live="polite">
+    <span id="clue-arrow" aria-hidden="true">→</span>
+    <span id="clue-text"></span>
+  </div>
+  <div id="board">
+    <div id="grid"></div>
+    <svg id="overlay" aria-hidden="true"></svg>
+  </div>
+  <div id="actions">
+    <button id="check" disabled>Vérifier les réponses</button>
+    <p id="status" aria-live="polite"></p>
+    <button id="reset">Effacer la grille</button>
+  </div>
+  <p class="help" id="help"></p>
+</main>
+<nav id="keyboard" aria-label="Clavier"></nav>
+<script>
+const PUZZLE = {"id":"11ef786c673e","title":"Mots fléchés","rows":16,"cols":11,"layout":["#.#.#.#.#.#","#...#...#..","#...#......",".......#...","##...##....","...#....###","#..#...#...","......#....","##...#.....",".....#...##","#...#...#..","..###......","##.....#...",".....#....#","#....#.....","#....#....."],"slots":[{"dir":"across","cells":[[1,1],[1,2],[1,3]],"clue":[1,0],"arrow":"right","def":"Dans cette localité","breaks":[]},{"dir":"across","cells":[[1,5],[1,6],[1,7]],"clue":[1,4],"arrow":"right","def":"Se boit","breaks":[]},{"dir":"across","cells":[[1,9],[1,10]],"clue":[1,8],"arrow":"right","def":"Indique une disjonction exclusive","breaks":[]},{"dir":"across","cells":[[2,1],[2,2],[2,3]],"clue":[2,0],"arrow":"right","def":"Monnaie de Corée","breaks":[]},{"dir":"across","cells":[[2,5],[2,6],[2,7],[2,8],[2,9],[2,10]],"clue":[2,4],"arrow":"right","def":"Addiction de Denoyelle","breaks":[]},{"dir":"across","cells":[[3,0],[3,1],[3,2],[3,3],[3,4],[3,5],[3,6]],"clue":[2,0],"arrow":"down_then_right","def":"Franky","breaks":[]},{"dir":"across","cells":[[3,8],[3,9],[3,10]],"clue":[3,7],"arrow":"right","def":"Lieu de travail de Gauthier","breaks":[]},{"dir":"across","cells":[[4,2],[4,3],[4,4]],"clue":[4,1],"arrow":"right","def":"Vit dans la pomme","breaks":[]},{"dir":"across","cells":[[4,7],[4,8],[4,9],[4,10]],"clue":[4,6],"arrow":"right","def":"Saisons pour Valra","breaks":[]},{"dir":"across","cells":[[5,0],[5,1],[5,2]],"clue":[4,0],"arrow":"down_then_right","def":"Quartier où habiter","breaks":[]},{"dir":"across","cells":[[5,4],[5,5],[5,6],[5,7]],"clue":[5,3],"arrow":"right","def":"Partenaire de rock","breaks":[]},{"dir":"across","cells":[[6,1],[6,2]],"clue":[6,0],"arrow":"right","def":"Nouvel Bling Bling","breaks":[]},{"dir":"across","cells":[[6,4],[6,5],[6,6]],"clue":[6,3],"arrow":"right","def":"Elle fait des pancakes","breaks":[]},{"dir":"across","cells":[[6,8],[6,9],[6,10]],"clue":[6,7],"arrow":"right","def":"Magazine","breaks":[]},{"dir":"across","cells":[[7,0],[7,1],[7,2],[7,3],[7,4],[7,5]],"clue":[6,0],"arrow":"down_then_right","def":"Fils moins préféré","breaks":[]},{"dir":"across","cells":[[7,7],[7,8],[7,9],[7,10]],"clue":[7,6],"arrow":"right","def":"Substance extraite de plante","breaks":[]},{"dir":"across","cells":[[8,2],[8,3],[8,4]],"clue":[8,1],"arrow":"right","def":"Ancienne lettre russe","breaks":[]},{"dir":"across","cells":[[8,6],[8,7],[8,8],[8,9],[8,10]],"clue":[8,5],"arrow":"right","def":"Fils préféré","breaks":[]},{"dir":"across","cells":[[9,0],[9,1],[9,2],[9,3],[9,4]],"clue":[8,0],"arrow":"down_then_right","def":"Cri des bacchantes en l’honneur de Dionysos","breaks":[]},{"dir":"across","cells":[[9,6],[9,7],[9,8]],"clue":[9,5],"arrow":"right","def":"Entends, à l’ancienne","breaks":[]},{"dir":"across","cells":[[10,1],[10,2],[10,3]],"clue":[10,0],"arrow":"right","def":"Femme mariée","breaks":[]},{"dir":"across","cells":[[10,5],[10,6],[10,7]],"clue":[10,4],"arrow":"right","def":"Madame, outre-Manche","breaks":[]},{"dir":"across","cells":[[10,9],[10,10]],"clue":[10,8],"arrow":"right","def":"Lave hawaïenne","breaks":[]},{"dir":"across","cells":[[11,0],[11,1]],"clue":[10,0],"arrow":"down_then_right","def":"JB est un fan","breaks":[]},{"dir":"across","cells":[[11,5],[11,6],[11,7],[11,8],[11,9],[11,10]],"clue":[11,4],"arrow":"right","def":"Pour partir en vacances","breaks":[]},{"dir":"across","cells":[[12,2],[12,3],[12,4],[12,5],[12,6]],"clue":[12,1],"arrow":"right","def":"Pousse difficilement dans le 15","breaks":[]},{"dir":"across","cells":[[12,8],[12,9],[12,10]],"clue":[12,7],"arrow":"right","def":"Une blonda","breaks":[]},{"dir":"across","cells":[[13,0],[13,1],[13,2],[13,3],[13,4]],"clue":[12,0],"arrow":"down_then_right","def":"Nul à la coinche","breaks":[]},{"dir":"across","cells":[[13,6],[13,7],[13,8],[13,9]],"clue":[13,5],"arrow":"right","def":"Pour rembourser les potes","breaks":[]},{"dir":"across","cells":[[14,1],[14,2],[14,3],[14,4]],"clue":[14,0],"arrow":"right","def":"Il sent pas bon","breaks":[]},{"dir":"across","cells":[[14,6],[14,7],[14,8],[14,9],[14,10]],"clue":[14,5],"arrow":"right","def":"Se mate au Grand Rex","breaks":[]},{"dir":"across","cells":[[15,1],[15,2],[15,3],[15,4]],"clue":[15,0],"arrow":"right","def":"Stipagrostis pungens (WTF bonne chance)","breaks":[]},{"dir":"across","cells":[[15,6],[15,7],[15,8],[15,9],[15,10]],"clue":[15,5],"arrow":"right","def":"Tisseuse à huit pattes","breaks":[]},{"dir":"down","cells":[[0,1],[1,1],[2,1],[3,1]],"clue":[0,0],"arrow":"right_then_down","def":"Fruit pour un gaillard","breaks":[]},{"dir":"down","cells":[[5,1],[6,1],[7,1]],"clue":[4,1],"arrow":"down","def":"Check les pénos","breaks":[]},{"dir":"down","cells":[[9,1],[10,1],[11,1]],"clue":[8,1],"arrow":"down","def":"Jeune papa","breaks":[]},{"dir":"down","cells":[[13,1],[14,1],[15,1]],"clue":[12,1],"arrow":"down","def":"Organisation de Coopération de Shanghaï","breaks":[]},{"dir":"down","cells":[[1,2],[2,2],[3,2],[4,2],[5,2],[6,2],[7,2],[8,2],[9,2],[10,2]],"clue":[0,2],"arrow":"down","def":"Épicentre des buffoniens","breaks":[]},{"dir":"down","cells":[[12,2],[13,2],[14,2],[15,2]],"clue":[11,2],"arrow":"down","def":"Dans l’empire ottoman","breaks":[]},{"dir":"down","cells":[[0,3],[1,3],[2,3],[3,3],[4,3]],"clue":[0,2],"arrow":"right_then_down","def":"Qui a peu d’épaisseur","breaks":[]},{"dir":"down","cells":[[7,3],[8,3],[9,3],[10,3]],"clue":[6,3],"arrow":"down","def":"Rigole par message","breaks":[]},{"dir":"down","cells":[[12,3],[13,3],[14,3],[15,3]],"clue":[11,3],"arrow":"down","def":"Pour Léna et Laurie","breaks":[]},{"dir":"down","cells":[[3,4],[4,4],[5,4],[6,4],[7,4],[8,4],[9,4]],"clue":[2,4],"arrow":"down","def":"Châtaigne de terre","breaks":[]},{"dir":"down","cells":[[12,4],[13,4],[14,4],[15,4]],"clue":[11,4],"arrow":"down","def":"Moitié de Chloé","breaks":[]},{"dir":"down","cells":[[0,5],[1,5],[2,5],[3,5]],"clue":[0,4],"arrow":"right_then_down","def":"Pendant la messe","breaks":[]},{"dir":"down","cells":[[5,5],[6,5],[7,5]],"clue":[4,5],"arrow":"down","def":"Avril","breaks":[]},{"dir":"down","cells":[[10,5],[11,5],[12,5]],"clue":[9,5],"arrow":"down","def":"Maintenant","breaks":[]},{"dir":"down","cells":[[1,6],[2,6],[3,6]],"clue":[0,6],"arrow":"down","def":"Octobre","breaks":[]},{"dir":"down","cells":[[5,6],[6,6]],"clue":[4,6],"arrow":"down","def":"Elle va détruire l'humanité","breaks":[]},{"dir":"down","cells":[[8,6],[9,6],[10,6],[11,6],[12,6],[13,6],[14,6],[15,6]],"clue":[7,6],"arrow":"down","def":"Région de France anlgaise","breaks":[]},{"dir":"down","cells":[[0,7],[1,7],[2,7]],"clue":[0,6],"arrow":"right_then_down","def":"Il marque le doute","breaks":[]},{"dir":"down","cells":[[4,7],[5,7]],"clue":[3,7],"arrow":"down","def":"Existes","breaks":[]},{"dir":"down","cells":[[7,7],[8,7],[9,7],[10,7],[11,7]],"clue":[6,7],"arrow":"down","def":"Regarda de haut","breaks":[]},{"dir":"down","cells":[[13,7],[14,7],[15,7]],"clue":[12,7],"arrow":"down","def":"On y fait des zig-zags","breaks":[]},{"dir":"down","cells":[[2,8],[3,8],[4,8]],"clue":[1,8],"arrow":"down","def":"Coquille d'imprimerie pour etc","breaks":[]},{"dir":"down","cells":[[6,8],[7,8],[8,8],[9,8]],"clue":[5,8],"arrow":"down","def":"Philippins","breaks":[]},{"dir":"down","cells":[[11,8],[12,8],[13,8],[14,8],[15,8]],"clue":[10,8],"arrow":"down","def":"Inanité","breaks":[]},{"dir":"down","cells":[[0,9],[1,9],[2,9],[3,9],[4,9]],"clue":[0,8],"arrow":"right_then_down","def":"Base de sauce","breaks":[]},{"dir":"down","cells":[[6,9],[7,9],[8,9]],"clue":[5,9],"arrow":"down","def":"Elle gli","breaks":[]},{"dir":"down","cells":[[10,9],[11,9],[12,9],[13,9],[14,9],[15,9]],"clue":[9,9],"arrow":"down","def":"Il donne bon goût","breaks":[]},{"dir":"down","cells":[[1,10],[2,10],[3,10],[4,10]],"clue":[0,10],"arrow":"down","def":"Droit d’usage d’un bien","breaks":[]},{"dir":"down","cells":[[6,10],[7,10],[8,10]],"clue":[5,10],"arrow":"down","def":"En slip au château","breaks":[]},{"dir":"down","cells":[[10,10],[11,10],[12,10]],"clue":[9,10],"arrow":"down","def":"Passé à l’action","breaks":[]},{"dir":"down","cells":[[14,10],[15,10]],"clue":[13,10],"arrow":"down","def":"Avec un pont","breaks":[]}],"mystery":{"cells":[[6,8],[14,2],[14,10],[7,2],[1,1],[3,5],[11,8],[0,7],[15,7],[9,4]],"breaks":[],"def":"Un monopole qui nous met bien"},"key":"64903ed4d68e82574746c2d4a3846ab9b063c4bee32ee9b9f3df60436fdbbbf2ba43155254fa563213353c8d698dd3ff0fac00840dee55f3ed07b84b796e2cdc41669dfea5416035aa908abfe2d434329d37ac7a51cf040f3452bd79d601866b7cd53d373dd267e3ec2c457f8aab9ddf2cb5471ebc610ac08432c319fcb1647804e49c"};
+</script>
+<script>
+"use strict";
+(function () {
+  const P = PUZZLE;
+  const R = P.rows, C = P.cols;
+  const TILE_COLORS = ["#e65438", "#faa826", "#33a394", "#4078d1", "#804db8"];
+  const ARROW_CHAR = { right: "→", down: "↓", right_then_down: "↴", down_then_right: "↳" };
+  const $ = (id) => document.getElementById(id);
+  const touch = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+  if (touch) document.body.classList.add("touch");
+
+  // ---- model --------------------------------------------------------------
+  const key = (r, c) => r * C + c;
+  const isLetter = (r, c) => r >= 0 && c >= 0 && r < R && c < C && P.layout[r][c] === ".";
+  const index = new Map();  // cell key -> letter index (reading order)
+  for (let r = 0; r < R; r++)
+    for (let c = 0; c < C; c++)
+      if (isLetter(r, c)) index.set(key(r, c), index.size);
+  const N = index.size;
+  const solution = unscramble(P.key, P.id);
+  const slotsAt = new Map();  // cell key -> {across, down} slot indices
+  const cluesAt = new Map();  // clue cell key -> {top, bottom} slot indices
+  P.slots.forEach((s, i) => {
+    for (const [r, c] of s.cells) {
+      const k = key(r, c);
+      if (!slotsAt.has(k)) slotsAt.set(k, {});
+      slotsAt.get(k)[s.dir] = i;
+    }
+    const ck = key(s.clue[0], s.clue[1]);
+    if (!cluesAt.has(ck)) cluesAt.set(ck, {});
+    const exitsRight = s.arrow === "right" || s.arrow === "right_then_down";
+    cluesAt.get(ck)[exitsRight ? "top" : "bottom"] = i;
+  });
+  const order = P.slots.map((s, i) => i).sort((a, b) => {
+    const [ra, ca] = P.slots[a].cells[0], [rb, cb] = P.slots[b].cells[0];
+    return (P.slots[a].dir === "across" ? 0 : 1) - (P.slots[b].dir === "across" ? 0 : 1)
+      || ra - rb || ca - cb;
+  });
+
+  function keystream(id, n) {  // mirrors html_export.keystream
+    let s = parseInt(id.slice(0, 8), 16) & 0x7fffffff;
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      s = (Math.imul(s, 1103515245) + 12345) & 0x7fffffff;
+      out.push((s >>> 16) & 0xff);
+    }
+    return out;
+  }
+  function unscramble(hex, id) {
+    const n = hex.length / 2, ks = keystream(id, n);
+    let out = "";
+    for (let i = 0; i < n; i++)
+      out += String.fromCharCode(parseInt(hex.substr(2 * i, 2), 16) ^ ks[i]);
+    return out;
+  }
+
+  // ---- state (saved in this browser) ---------------------------------------
+  const STORE = "arroword:" + P.id;
+  let letters = new Array(N).fill("");
+  try {
+    const saved = localStorage.getItem(STORE);
+    if (saved && saved.length === N)
+      letters = [...saved].map((ch) => (ch === "." ? "" : ch));
+  } catch (e) { /* storage unavailable: start empty */ }
+  function save() {
+    try { localStorage.setItem(STORE, letters.map((l) => l || ".").join("")); } catch (e) { }
+  }
+  let cur = null;      // [r, c] of the cursor
+  let slot = null;     // active slot index
+  let verdict = null;  // last check result, cleared by any edit
+
+  // ---- building the page -----------------------------------------------------
+  const grid = $("grid"), board = $("board");
+  board.style.setProperty("--cols", C);
+  board.style.setProperty("--rows", R);
+  grid.style.setProperty("--cols", C);
+  const cellEls = new Map(), defEls = new Map();
+  for (let r = 0; r < R; r++) {
+    for (let c = 0; c < C; c++) {
+      const el = document.createElement("div");
+      el.dataset.r = r; el.dataset.c = c;
+      if (isLetter(r, c)) {
+        el.className = "cell letter";
+        el.appendChild(document.createElement("b"));
+      } else {
+        const clue = cluesAt.get(key(r, c));
+        if (!clue) {
+          el.className = "cell blank";
+          el.textContent = "★";
+        } else {
+          el.className = "cell clue";
+          for (const part of ["top", "bottom"]) {
+            if (clue[part] === undefined) continue;
+            const def = document.createElement("div");
+            def.className = "def";
+            def.dataset.slot = clue[part];
+            const span = document.createElement("span");
+            span.textContent = P.slots[clue[part]].def;
+            def.appendChild(span);
+            el.appendChild(def);
+            defEls.set(clue[part], def);
+          }
+        }
+      }
+      cellEls.set(key(r, c), el);
+      grid.appendChild(el);
+    }
+  }
+  if (P.mystery) {
+    P.mystery.cells.forEach(([r, c], i) => {
+      const num = document.createElement("span");
+      num.className = "num";
+      num.textContent = i + 1;
+      cellEls.get(key(r, c)).appendChild(num);
+    });
+  }
+  drawOverlay();
+  drawTitle();
+  const mysteryBoxes = buildMystery();
+  buildKeyboard();
+  $("help").textContent = touch
+    ? "Touchez une case ou une définition. Touchez à nouveau la case pour changer de sens."
+    : "Cliquez une case ou une définition, puis tapez. Entrée ou un second clic change de sens, Tab passe au mot suivant.";
+
+  function drawOverlay() {
+    const svg = $("overlay"), NS = "http://www.w3.org/2000/svg";
+    svg.setAttribute("viewBox", `0 0 ${C} ${R}`);
+    svg.setAttribute("preserveAspectRatio", "none");
+    const add = (tag, attrs) => {
+      const el = document.createElementNS(NS, tag);
+      for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+      svg.appendChild(el);
+      return el;
+    };
+    // grid lines; the edge inside a word at a space / hyphen is dotted
+    const dotted = new Set();
+    for (const s of P.slots)
+      for (const i of s.breaks) dotted.add(key(...s.cells[i - 1]) + ":" + key(...s.cells[i]));
+    let lines = "", dots = "";
+    for (let r = 0; r < R; r++) {
+      for (let c = 0; c < C; c++) {
+        if (c > 0) {
+          const seg = `M${c} ${r}V${r + 1}`;
+          if (dotted.has(key(r, c - 1) + ":" + key(r, c))) dots += seg; else lines += seg;
+        }
+        if (r > 0) {
+          const seg = `M${c} ${r}H${c + 1}`;
+          if (dotted.has(key(r - 1, c) + ":" + key(r, c))) dots += seg; else lines += seg;
+        }
+      }
+    }
+    add("path", { d: lines, stroke: "var(--line)", "stroke-width": 1, fill: "none",
+                  "vector-effect": "non-scaling-stroke" });
+    if (dots) add("path", { d: dots, stroke: "var(--ink)", "stroke-width": 0.05, fill: "none",
+                            "stroke-linecap": "round", "stroke-dasharray": "0.001 0.111" });
+    add("rect", { x: 0, y: 0, width: C, height: R, fill: "none", stroke: "var(--ink)",
+                  "stroke-width": 2.5, "vector-effect": "non-scaling-stroke" });
+    // arrows on the clue cell's exit side, reaching into the first letter
+    const h = 0.075;
+    const head = (x, y, dx, dy) => {
+      const bx = x - dx * h * 1.3, by = y - dy * h * 1.3;
+      add("path", { d: `M${x} ${y}L${bx - dy * h * 0.8} ${by + dx * h * 0.8}` +
+                       `L${bx + dy * h * 0.8} ${by - dx * h * 0.8}Z`, fill: "var(--arrow)" });
+    };
+    const stroke = { stroke: "var(--arrow)", "stroke-width": 0.03, fill: "none" };
+    for (const s of P.slots) {
+      const [y, x] = s.clue;
+      const clue = cluesAt.get(key(y, x));
+      const double = clue.top !== undefined && clue.bottom !== undefined;
+      if (s.arrow === "right") {
+        const ay = y + (double ? 0.25 : 0.5);
+        add("path", { d: `M${x + 0.98} ${ay}H${x + 1.12}`, ...stroke });
+        head(x + 1.17, ay, 1, 0);
+      } else if (s.arrow === "down") {
+        const ax = x + 0.5;
+        add("path", { d: `M${ax} ${y + 0.98}V${y + 1.12}`, ...stroke });
+        head(ax, y + 1.17, 0, 1);
+      } else if (s.arrow === "right_then_down") {
+        const ay = y + 0.17, bx = x + 1.2;
+        add("path", { d: `M${x + 0.98} ${ay}H${bx}V${ay + 0.14}`, ...stroke });
+        head(bx, ay + 0.19, 0, 1);
+      } else {
+        const ax = x + 0.17, by = y + 1.2;
+        add("path", { d: `M${ax} ${y + 0.98}V${by}H${ax + 0.14}`, ...stroke });
+        head(ax + 0.19, by, 1, 0);
+      }
+    }
+  }
+
+  function drawTitle() {
+    const header = $("title");
+    let color = 0;
+    [...P.title].forEach((ch, i) => {
+      const el = document.createElement("span");
+      if (ch.trim() === "") { el.className = "gap"; header.appendChild(el); return; }
+      el.className = "tile";
+      el.textContent = ch.toUpperCase();
+      el.style.background = TILE_COLORS[color % TILE_COLORS.length];
+      el.style.setProperty("--tilt", color % 2 ? "3deg" : "-3deg");
+      el.style.setProperty("--i", i);
+      header.appendChild(el);
+      color++;
+    });
+    document.title = P.title;
+  }
+
+  function buildMystery() {
+    if (!P.mystery) return [];
+    const section = $("mystery"), boxes = section.querySelector(".boxes");
+    section.hidden = false;
+    const els = P.mystery.cells.map(([r, c], i) => {
+      if (P.mystery.breaks.includes(i)) {
+        const dash = document.createElement("span");
+        dash.className = "dash";
+        dash.textContent = "–";
+        boxes.appendChild(dash);
+      }
+      const box = document.createElement("button");
+      box.className = "box";
+      box.setAttribute("aria-label", "Lettre " + (i + 1));
+      box.innerHTML = "<b></b><small>" + (i + 1) + "</small>";
+      box.addEventListener("click", () => select(r, c, currentDir()));
+      boxes.appendChild(box);
+      return box.firstChild;
+    });
+    if (P.mystery.def) {
+      const def = section.querySelector(".mystery-def");
+      def.textContent = P.mystery.def;
+      def.hidden = false;
+    }
+    return els;
+  }
+
+  function buildKeyboard() {
+    const kb = $("keyboard");
+    const rows = ["AZERTYUIOP", "QSDFGHJKLM", "⇄WXCVBN⌫"];
+    for (const row of rows) {
+      const line = document.createElement("div");
+      line.className = "row";
+      for (const k of row) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.textContent = k;
+        if (k === "⇄") { b.className = "wide"; b.setAttribute("aria-label", "Changer de sens"); }
+        if (k === "⌫") { b.className = "wide"; b.setAttribute("aria-label", "Effacer"); }
+        b.addEventListener("pointerdown", (e) => {
+          e.preventDefault();
+          b.classList.add("pressed");
+          setTimeout(() => b.classList.remove("pressed"), 120);
+          if (k === "⇄") toggleDir();
+          else if (k === "⌫") backspace();
+          else type(k);
+        });
+        line.appendChild(b);
+      }
+      kb.appendChild(line);
+    }
+  }
+
+  // ---- sizing ------------------------------------------------------------------
+  function layout() {
+    const main = document.querySelector("main");
+    const width = main.clientWidth - 32;
+    let cell = width / C;
+    if (!touch) cell = Math.min(cell, Math.max(34, (window.innerHeight - 170) / R));
+    cell = Math.max(18, Math.floor(Math.min(cell, 64)));
+    document.documentElement.style.setProperty("--cell", cell + "px");
+    const tile = Math.floor(Math.min(34, (width - 4 * P.title.length) / P.title.length));
+    $("title").style.setProperty("--tile", tile + "px");
+    const kb = $("keyboard");
+    document.documentElement.style.setProperty(
+      "--kb-height", (touch ? kb.offsetHeight : 0) + "px");
+    fitDefinitions(cell);
+  }
+
+  // Largest font that fits each definition box; splitting a word is a last
+  // resort, like the PDF.
+  function fitDefinitions(cell) {
+    const max = Math.min(cell * 0.21, 13), min = 3;
+    for (const def of defEls.values()) {
+      const span = def.firstChild;
+      const fits = (size) => {
+        span.style.fontSize = size + "px";
+        return span.scrollWidth <= span.clientWidth + 0.5
+          && span.getBoundingClientRect().height <= def.clientHeight - 1;
+      };
+      def.classList.remove("split");
+      if (!fits(min)) def.classList.add("split");
+      let lo = min, hi = max;
+      if (fits(hi)) continue;
+      while (hi - lo > 0.25) {
+        const mid = (lo + hi) / 2;
+        if (fits(mid)) lo = mid; else hi = mid;
+      }
+      fits(lo);
+    }
+  }
+
+  // ---- interaction -------------------------------------------------------------
+  function currentDir() { return slot === null ? "across" : P.slots[slot].dir; }
+
+  function select(r, c, dir) {
+    const at = slotsAt.get(key(r, c));
+    if (!at) return;
+    const other = dir === "across" ? "down" : "across";
+    slot = at[dir] !== undefined ? at[dir] : at[other];
+    cur = [r, c];
+    render(true);
+  }
+
+  function selectSlot(i) {
+    slot = i;
+    const cells = P.slots[i].cells;
+    cur = cells.find(([r, c]) => !letters[index.get(key(r, c))]) || cells[0];
+    render(true);
+  }
+
+  function toggleDir() {
+    if (!cur) { selectSlot(order[0]); return; }
+    const at = slotsAt.get(key(...cur));
+    const other = currentDir() === "across" ? "down" : "across";
+    if (at[other] !== undefined) { slot = at[other]; render(true); }
+  }
+
+  function position() {
+    return P.slots[slot].cells.findIndex(([r, c]) => r === cur[0] && c === cur[1]);
+  }
+
+  function setLetter(r, c, ch) {
+    letters[index.get(key(r, c))] = ch;
+    verdict = null;
+    save();
+  }
+
+  function type(ch) {
+    if (!cur) { selectSlot(order[0]); }
+    setLetter(cur[0], cur[1], ch);
+    const cells = P.slots[slot].cells, k = position();
+    if (k < cells.length - 1) cur = cells[k + 1];
+    render(true);
+  }
+
+  function backspace() {
+    if (!cur) return;
+    if (letters[index.get(key(...cur))]) {
+      setLetter(cur[0], cur[1], "");
+    } else {
+      const k = position();
+      if (k > 0) {
+        cur = P.slots[slot].cells[k - 1];
+        setLetter(cur[0], cur[1], "");
+      }
+    }
+    render(true);
+  }
+
+  function move(dr, dc) {
+    if (!cur) { selectSlot(order[0]); return; }
+    const dir = dc ? "across" : "down";
+    const at = slotsAt.get(key(...cur));
+    if (currentDir() !== dir && at[dir] !== undefined) { slot = at[dir]; render(true); return; }
+    let [r, c] = cur;
+    do { r += dr; c += dc; } while (r >= 0 && c >= 0 && r < R && c < C && !isLetter(r, c));
+    if (isLetter(r, c)) select(r, c, dir);
+  }
+
+  function nextSlot(step) {
+    const k = slot === null ? -1 : order.indexOf(slot);
+    selectSlot(order[(k + step + order.length) % order.length]);
+  }
+
+  grid.addEventListener("click", (e) => {
+    const def = e.target.closest(".def");
+    if (def) { selectSlot(Number(def.dataset.slot)); return; }
+    const el = e.target.closest(".cell.letter");
+    if (!el) return;
+    const r = Number(el.dataset.r), c = Number(el.dataset.c);
+    if (cur && cur[0] === r && cur[1] === c) toggleDir();
+    else select(r, c, currentDir());
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const onButton = e.target.closest && e.target.closest("button");
+    if (onButton && (e.key === "Enter" || e.key === " ")) return;
+    const letter = e.key.length === 1
+      ? e.key.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase() : "";
+    if (/^[A-Z]$/.test(letter)) type(letter);
+    else if (e.key === "Backspace") backspace();
+    else if (e.key === "Delete") { if (cur) { setLetter(cur[0], cur[1], ""); render(false); } }
+    else if (e.key === "ArrowRight") move(0, 1);
+    else if (e.key === "ArrowLeft") move(0, -1);
+    else if (e.key === "ArrowDown") move(1, 0);
+    else if (e.key === "ArrowUp") move(-1, 0);
+    else if (e.key === "Tab") nextSlot(e.shiftKey ? -1 : 1);
+    else if (e.key === "Enter" || e.key === " ") toggleDir();
+    else return;
+    e.preventDefault();
+  });
+
+  $("check").addEventListener("click", () => {
+    if (letters.some((l) => !l)) return;
+    verdict = letters.reduce((n, l, i) => n + (l !== solution[i] ? 1 : 0), 0);
+    render(false);
+    if (verdict === 0) {
+      const header = $("title");
+      header.classList.remove("win");
+      void header.offsetWidth;  // restart the animation
+      header.classList.add("win");
+    }
+  });
+
+  $("reset").addEventListener("click", () => {
+    if (!confirm("Effacer toutes les lettres de la grille ?")) return;
+    letters = new Array(N).fill("");
+    verdict = null;
+    save();
+    render(false);
+  });
+
+  // ---- rendering ---------------------------------------------------------------
+  function render(follow) {
+    const active = slot === null ? null : P.slots[slot];
+    const inWord = new Set(active ? active.cells.map(([r, c]) => key(r, c)) : []);
+    for (const [k, i] of index) {
+      const el = cellEls.get(k);
+      el.firstChild.textContent = letters[i];
+      el.classList.toggle("word", inWord.has(k));
+      el.classList.toggle("cursor", !!cur && k === key(...cur));
+    }
+    for (const [i, def] of defEls) def.classList.toggle("active", i === slot);
+    if (P.mystery)
+      P.mystery.cells.forEach(([r, c], i) => {
+        mysteryBoxes[i].textContent = letters[index.get(key(r, c))];
+      });
+
+    const text = $("clue-text");
+    if (active) {
+      $("clue-arrow").textContent = ARROW_CHAR[active.arrow];
+      text.textContent = active.def + " ";
+      const len = document.createElement("span");
+      len.className = "len";
+      len.textContent = "(" + active.cells.length + " lettres)";
+      text.appendChild(len);
+    } else {
+      text.innerHTML = '<span class="hint">Choisissez une case ou une définition pour commencer.</span>';
+    }
+
+    const empty = letters.filter((l) => !l).length;
+    const check = $("check"), status = $("status");
+    check.disabled = empty > 0;
+    status.className = "";
+    if (verdict === 0) {
+      status.className = "good";
+      status.textContent = "Bravo ! Aucune erreur, la grille est parfaite 🎉";
+    } else if (verdict !== null) {
+      status.className = "bad";
+      status.textContent = verdict + (verdict > 1 ? " lettres fausses" : " lettre fausse");
+    } else if (empty > 0) {
+      status.textContent = "Encore " + empty + (empty > 1 ? " cases" : " case") + " à remplir";
+    } else {
+      status.textContent = "Grille complète, vous pouvez vérifier vos réponses.";
+    }
+    if (follow && cur) keepVisible(cellEls.get(key(...cur)));
+  }
+
+  // Scroll so the cursor is neither under the definition bar nor the keyboard.
+  function keepVisible(el) {
+    const rect = el.getBoundingClientRect();
+    const top = $("cluebar").getBoundingClientRect().bottom + 4;
+    const bottom = window.innerHeight - (touch ? $("keyboard").offsetHeight : 0) - 4;
+    if (rect.top < top) window.scrollBy(0, rect.top - top);
+    else if (rect.bottom > bottom) window.scrollBy(0, rect.bottom - bottom);
+  }
+
+  let resizeTimer = null;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(layout, 150);
+  });
+  layout();
+  render(false);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(layout);
+})();
+</script>
+</body>
+</html>
